@@ -1,0 +1,13 @@
+# Estetään ympäristömuuttujat ja salaisuudet
+.env
+
+# Estetään Pythonin välimuistikansiot
+__pycache__/
+
+# Estetään VS Coden paikalliset asetukset
+.vscode/
+
+# Estetään diagnostiikan lokitiedostot
+*.txt
+
+# Voit lisätä muita tiedostoja tai kansioita tarpeen mukaan
