@@ -11,7 +11,7 @@ import requests
 # --- MALLIASETUKSET ---
 FAST_MODEL = "llama3"  # Nopea yleismalli
 # Voit vaihtaa tähän myös "turkunlp/poro-34b-instruct", jos haluat laatua nopeuden sijaan
-POWERFUL_MODEL = "llama3"
+POWERFUL_MODEL = "poro-local" # Itse asennettu, laadukas Suomi-malli
 TEOLOGINEN_PERUSOHJE = (
     "Olet teologinen assistentti. Perusta kaikki vastauksesi ja tulkintasi "
     "ainoastaan sinulle annettuihin KR33/38-raamatunjakeisiin ja käyttäjän "
@@ -136,7 +136,6 @@ def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3):
     """
     Tekee API-kutsun paikallisesti pyörivälle Ollama-palvelimelle.
     """
-    # VAIHDETAAN localhost tarkkaan IP-osoitteeseen 127.0.0.1
     OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 
     payload = {
@@ -147,9 +146,14 @@ def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3):
             "temperature": temperature
         }
     }
+    
+    proxies = {
+       "http": None,
+       "https": None,
+    }
 
     try:
-        response = requests.post(OLLAMA_URL, json=payload, timeout=120)
+        response = requests.post(OLLAMA_URL, json=payload, timeout=120, proxies=proxies)
         response.raise_for_status()
 
         response_data = response.json()
@@ -174,7 +178,7 @@ def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3):
 
 
 def luo_hakusuunnitelma(pääaihe, syote_teksti):
-    """Luo älykkään hakusuunnitelman Geminillä."""
+    """Luo älykkään hakusuunnitelman paikallisella tekoälyllä."""
     prompt = (
         f"{TEOLOGINEN_PERUSOHJE}\n\n"
         "Tehtäväsi on luoda yksityiskohtainen hakusuunnitelma "
@@ -202,14 +206,17 @@ def luo_hakusuunnitelma(pääaihe, syote_teksti):
         '}}\n'
     )
     final_prompt = prompt.format(pääaihe=pääaihe, syote_teksti=syote_teksti)
+    # TÄSSÄ ON KORJAUS: Vaihdettu POWERFUL_MODEL
     vastaus_str, usage = tee_api_kutsu(
-        final_prompt, "gemini-1.5-pro-latest", is_json=True, temperature=0.3
+    final_prompt, POWERFUL_MODEL, is_json=True, temperature=0.3
     )
     if not vastaus_str or vastaus_str.startswith("API-VIRHE:"):
         print(f"API-virhe hakusuunnitelman luonnissa: {vastaus_str}")
         return None, usage
     try:
-        return json.loads(vastaus_str), usage
+        # Puhdistetaan vastaus mahdollisista Markdown-koodilohkoista
+        cleaned_str = re.sub(r'```json\s*|\s*```', '', vastaus_str).strip()
+        return json.loads(cleaned_str), usage
     except json.JSONDecodeError:
         print(f"VIRHE: Hakusuunnitelman JSON-jäsennys epäonnistui: {vastaus_str}")
         return None, usage
