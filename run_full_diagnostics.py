@@ -107,7 +107,7 @@ def run_diagnostics():
     log_header("VAIHE 2: HAKUSUUNNITELMA & AVAINSANOJEN VALIDOINTI")
     start_phase_time = time.perf_counter()
     logging.info("Luodaan hakusuunnitelmaa...")
-    suunnitelma, _ = luo_hakusuunnitelma(pääaihe, syote_teksti)
+    suunnitelma = luo_hakusuunnitelma(pääaihe, syote_teksti)
     if not suunnitelma:
         logging.critical("Hakusuunnitelman luonti epäonnistui. Pysäytetään.")
         return
@@ -194,7 +194,7 @@ def run_diagnostics():
     def progress_logger(percent, text):
         logging.info(f"  - Edistyminen: {percent}% - {text}")
 
-    jae_kartta = pisteyta_ja_jarjestele(pääaihe, ..., osio_kohtaiset_jakeet, progress_callback=progress_logger)
+    jae_kartta = pisteyta_ja_jarjestele(pääaihe, suunnitelma.get("vahvistettu_sisallysluettelo", ""), osio_kohtaiset_jakeet, progress_callback=progress_logger)
     logging.info(
         f"Vaihe 4 valmis. Kesto: {time.perf_counter() - start_phase_time:.2f} sek.")
 

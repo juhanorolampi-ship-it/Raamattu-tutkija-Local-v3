@@ -14,8 +14,8 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%H:%M:%S')
 
 # --- MALLIASETUKSET (UUSI STRATEGIA) ---
-JSON_MODEL = "llama3:8b"      # Nopea ja luotettava JSON-muotoilija
-ANALYST_MODEL = "llama3:70b-instruct"   # Syvä teologinen analyytikko
+JSON_MODEL = "qwen2:7b"      # Nopea ja luotettava JSON-muotoilija
+ANALYST_MODEL = "qwen2:7b"   # Syvä teologinen analyytikko
 FINNISH_MODEL = "poro-local"            # Suomen kielen asiantuntija
 
 TEOLOGINEN_PERUSOHJE = (
@@ -158,7 +158,7 @@ def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3, retries=3)
                 f"(yritys {attempt + 1}/{retries})..."
             )
             response = requests.post(
-                OLLAMA_URL, json=payload, timeout=360, proxies=proxies)
+                OLLAMA_URL, json=payload, timeout=900, proxies=proxies)
             response.raise_for_status()
             response_data = response.json()
             content = response_data.get("message", {}).get("content", "")
@@ -200,57 +200,81 @@ def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3, retries=3)
 
 def luo_hakusuunnitelma(pääaihe, syote_teksti):
     """
-    Luo hakusuunnitelman käyttäjän syötteestä käyttäen JSON-erikoismallia.
+    Luo hakusuunnitelman pilkkomalla sisällysluettelon osiin ja
+    kysymällä avainsanat jokaiselle osiolle erikseen.
     """
+    logging.info("Aloitetaan hakusuunnitelman luonti osio kerrallaan...")
     sisallysluettelo_match = re.search(
         r"SISÄLLYSLUETTELO.*", syote_teksti, re.IGNORECASE | re.DOTALL
     )
     if not sisallysluettelo_match:
         logging.error("Syötteestä ei löytynyt 'SISÄLLYSLUETTELO'-osiota.")
         return None
-    
+
     kayttajan_sisallysluettelo = sisallysluettelo_match.group(0).strip()
+    
+    # Pilkotaan sisällysluettelo osioihin numeroidun listauksen perusteella
+    osiot = re.findall(r"(^\s*(\d+(\.\d+)*\.).*?)(?=\n\s*\d+(\.\d+)*\.|\Z)", 
+                         kayttajan_sisallysluettelo, re.MULTILINE | re.DOTALL)
 
-    prompt = (
-        "Tehtäväsi on luoda hakusanat annettujen ohjeiden mukaisesti. "
-        "VASTAA AINA JA VAIN KELVOLLISELLA JSON-OBJEKTILLA.\n\n"
-        f"PÄÄAIHE: {pääaihe}\n\n"
-        "SISÄLLYSLUETTELO, johon hakusanat tulee luoda:\n---\n"
-        f"{kayttajan_sisallysluettelo}\n---\n\n"
-        "OHJEET:\n"
-        "1. Luo JOKAISELLE sisallysluettelon numeroidulle osiolle (esim. '1.', '2.1.') lista sopivia hakusanoja.\n"
-        "2. **TÄRKEÄ SÄÄNTÖ HAKUSANOILLE:** Anna jokaiselle käsitteelle 2-4 tärkeintä muotoa, synonyymiä tai taivutusmuotoa, "
-        "jotka löytyvät todennäköisesti KR33/38-Raamatusta.\n"
-        "3. Palauta VAIN JSON-objekti, joka sisältää ainoastaan `hakukomennot`-avaimen. ÄLÄ kirjoita mitään muuta."
-    )
-
-    # Uusi, korjattu rivi
-    vastaus_str = tee_api_kutsu(
-        prompt, ANALYST_MODEL, is_json=True, temperature=0.1
-    )
-    if not vastaus_str or vastaus_str.startswith("API-VIRHE:"):
-        logging.error(f"API-virhe hakusuunnitelman luonnissa: {vastaus_str}")
+    if not osiot:
+        logging.error("Ei pystytty jäsentämään osioita sisällysluettelosta.")
         return None
+
+    kokonais_hakukomennot = {}
+    total_osiot = len(osiot)
+
+    for i, osio_data in enumerate(osiot):
+        osion_teksti = osio_data[0].strip()
+        osion_numero = osio_data[1].strip()
         
-    logging.debug(f"Hakusuunnitelman raakavastaus: {vastaus_str}")
+        logging.info(f"({i+1}/{total_osiot}) Käsitellään osiota: {osion_numero}")
 
-    try:
-        json_str = _etsi_json_lohk(vastaus_str)
-        if not json_str:
-            raise ValueError("Kelvollista JSON-objektia ei löytynyt vastauksesta.")
+        prompt = (
+            "Olet apulaistutkija. Tehtäväsi on luoda avainsanat alla olevalle "
+            "yksittäiselle tutkimuksen alaotsikolle. Pääaihe antaa kontekstin.\n\n"
+            f"PÄÄAIHE: {pääaihe}\n\n"
+            f"ALAOTSIKKO:\n---\n{osion_teksti}\n---\n\n"
+            "OHJEET:\n"
+            "1. Luo listan, jossa on 2-4 kaikkein tärkeintä hakusanaa, "
+            "jotka liittyvät yllä olevaan ALAOTSIKKOON.\n"
+            "2. Valitse sanoja tai sanapareja, jotka löytyvät todennäköisesti "
+            "suomalaisesta KR33/38-Raamatusta.\n"
+            "3. Palauta vastauksesi VAIN JSON-muotoisena listana. ÄLÄ kirjoita mitään muuta.\n"
+            'Esimerkki: ["avainsana1", "avainsana2", "kolmas avainsana"]'
+        )
+
+        vastaus_str = tee_api_kutsu(
+            prompt, ANALYST_MODEL, is_json=True, temperature=0.1
+        )
+
+        if not vastaus_str or vastaus_str.startswith("API-VIRHE:"):
+            logging.error(f"API-virhe osion {osion_numero} käsittelyssä. Ohitetaan.")
+            continue
         
-        hakukomennot_data = ast.literal_eval(json_str)
+        try:
+            json_str = _etsi_json_lohk(vastaus_str)
+            if not json_str:
+                raise ValueError("Kelvollista JSON-listaa ei löytynyt vastauksesta.")
+            
+            avainsanat = ast.literal_eval(json_str)
+            if isinstance(avainsanat, list):
+                kokonais_hakukomennot[osion_numero] = avainsanat
+            else:
+                logging.warning(f"Odotettiin listaa osiolle {osion_numero}, mutta saatiin: {type(avainsanat)}")
 
-        suunnitelma = {
-            "vahvistettu_sisallysluettelo": kayttajan_sisallysluettelo,
-            "hakukomennot": hakukomennot_data.get("hakukomennot", {})
-        }
-        return suunnitelma
+        except (ValueError, SyntaxError) as e:
+            logging.error(f"JSON-jäsennysvirhe osiolle {osion_numero}: {e}")
+        
+        time.sleep(1) # Pieni tauko kutsujen välillä
 
-    except (ValueError, SyntaxError) as e:
-        logging.error(
-            f"VIRHE: Hakusuunnitelman JSON-jäsennys epäonnistui. Virhe: {e}", exc_info=True)
-        return None
+    suunnitelma = {
+        "vahvistettu_sisallysluettelo": kayttajan_sisallysluettelo,
+        "hakukomennot": kokonais_hakukomennot
+    }
+    
+    logging.info("Hakusuunnitelman luonti valmis.")
+    return suunnitelma
 
 
 def validoi_avainsanat_ai(avainsanat):
