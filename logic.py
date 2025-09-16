@@ -20,28 +20,26 @@ TEOLOGINEN_PERUSOHJE = (
 )
 
 
-def lataa_raamattu(raamattu_url, sanakirja_url):
-    """Lataa Raamattu-datan ja sanakirjan suoraan URL-osoitteista."""
+def lataa_raamattu(raamattu_path, sanakirja_path):
+    """Lataa Raamattu-datan ja sanakirjan paikallisista JSON-tiedostoista."""
     try:
-        print(f"Ladataan Raamattu-dataa osoitteesta: {raamattu_url}")
-        response_bible = requests.get(raamattu_url)
-        response_bible.raise_for_status()  # Nostaa virheen, jos lataus epäonnistuu
-        bible_data = response_bible.json()
-    except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+        print(f"Ladataan Raamattu-dataa tiedostosta: {raamattu_path}")
+        with open(raamattu_path, 'r', encoding='utf-8') as f:
+            bible_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"KRIITTINEN VIRHE Raamattu-datan latauksessa: {e}")
         return None
 
     try:
-        print(f"Ladataan sanakirjaa osoitteesta: {sanakirja_url}")
-        response_dict = requests.get(sanakirja_url)
-        response_dict.raise_for_status()
-        raamattu_sanakirja = set(response_dict.json())
+        print(f"Ladataan sanakirjaa tiedostosta: {sanakirja_path}")
+        with open(sanakirja_path, 'r', encoding='utf-8') as f:
+            raamattu_sanakirja = set(json.load(f))
         print(f"Ladattu {len(raamattu_sanakirja)} sanaa Raamattu-sanakirjasta.")
-    except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+    except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"KRIITTINEN VIRHE sanakirjan latauksessa: {e}")
         return None
 
-    # Jäsennellään kirjat kuten ennenkin
+    # Jäsennellään kirjat kuten aiemminkin
     book_map, book_name_map, book_data_map, book_name_to_id_map = {}, {}, {}, {}
     sorted_book_ids = sorted(bible_data.get("book", {}).keys(), key=int)
     for book_id in sorted_book_ids:
@@ -137,35 +135,26 @@ def hae_jae_viitteella(viite_str, book_data_map, book_name_map_by_id):
 def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3):
     """
     Tekee API-kutsun paikallisesti pyörivälle Ollama-palvelimelle.
-    HUOM: Yksityiskohtaista token-laskentaa ei tueta tässä versiossa,
-    joten se palauttaa aina None käyttötiedoille.
     """
-    # Ollama-palvelimen oletusosoite paikallisella koneella
-    OLLAMA_URL = "http://localhost:11434/api/chat"
+    # VAIHDETAAN localhost tarkkaan IP-osoitteeseen 127.0.0.1
+    OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 
-    # Muodostetaan pyyntö Ollaman vaatimassa muodossa
     payload = {
         "model": model_name,
         "messages": [{"role": "user", "content": prompt}],
-        "stream": False,  # Halutaan koko vastaus kerralla
+        "stream": False,
         "options": {
             "temperature": temperature
         }
     }
-    # Jos pyydetään JSON-muotoista vastausta
-    if is_json:
-        payload["format"] = "json"
 
     try:
-        # Lähetetään pyyntö requests-kirjaston avulla
         response = requests.post(OLLAMA_URL, json=payload, timeout=120)
-        response.raise_for_status()  # Nostaa virheen, jos vastauskoodi on 4xx tai 5xx
+        response.raise_for_status()
 
         response_data = response.json()
         content = response_data.get("message", {}).get("content", "")
 
-        # Palautetaan None käyttötiedoille, koska Ollaman vastausrakenne on
-        # erilainen eikä sitä ole integroitu token-laskuriin.
         return content, None
 
     except requests.exceptions.RequestException as e:
