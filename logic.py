@@ -206,17 +206,22 @@ def luo_hakusuunnitelma(pääaihe, syote_teksti):
         '}}\n'
     )
     final_prompt = prompt.format(pääaihe=pääaihe, syote_teksti=syote_teksti)
-    # TÄSSÄ ON KORJAUS: Vaihdettu POWERFUL_MODEL
     vastaus_str, usage = tee_api_kutsu(
-    final_prompt, POWERFUL_MODEL, is_json=True, temperature=0.3
+        final_prompt, POWERFUL_MODEL, is_json=True, temperature=0.3
     )
     if not vastaus_str or vastaus_str.startswith("API-VIRHE:"):
         print(f"API-virhe hakusuunnitelman luonnissa: {vastaus_str}")
         return None, usage
     try:
-        # Puhdistetaan vastaus mahdollisista Markdown-koodilohkoista
-        cleaned_str = re.sub(r'```json\s*|\s*```', '', vastaus_str).strip()
-        return json.loads(cleaned_str), usage
+        # KORJAUS: Etsitään ja eristetään JSON-lohko vastauksesta
+        start = vastaus_str.find('{')
+        end = vastaus_str.rfind('}')
+        if start != -1 and end != -1:
+            json_str = vastaus_str[start:end+1]
+            return json.loads(json_str), usage
+        else:
+            raise json.JSONDecodeError("JSON-objektia ei löytynyt vastauksesta.", vastaus_str, 0)
+
     except json.JSONDecodeError:
         print(f"VIRHE: Hakusuunnitelman JSON-jäsennys epäonnistui: {vastaus_str}")
         return None, usage
