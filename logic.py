@@ -3,19 +3,15 @@ import io
 import json
 import re
 import time
-import os
 import docx
-import google.generativeai as genai
 import PyPDF2
-from groq import Groq, BadRequestError
-from google.generativeai.types import GenerationConfig
 import requests
 
-groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 # --- MALLIASETUKSET ---
-FAST_MODEL = "llama-3.1-8b-instant"
-POWERFUL_MODEL = "llama-3.3-70b-versatile"
+FAST_MODEL = "llama3"  # Nopea yleismalli
+# Voit vaihtaa tähän myös "turkunlp/poro-34b-instruct", jos haluat laatua nopeuden sijaan
+POWERFUL_MODEL = "llama3"
 TEOLOGINEN_PERUSOHJE = (
     "Olet teologinen assistentti. Perusta kaikki vastauksesi ja tulkintasi "
     "ainoastaan sinulle annettuihin KR33/38-raamatunjakeisiin ja käyttäjän "
@@ -139,56 +135,53 @@ def hae_jae_viitteella(viite_str, book_data_map, book_name_map_by_id):
 
 
 def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3):
-    """Tekee API-kutsun ja palauttaa tekstin sekä käyttötiedot."""
+    """
+    Tekee API-kutsun paikallisesti pyörivälle Ollama-palvelimelle.
+    HUOM: Yksityiskohtaista token-laskentaa ei tueta tässä versiossa,
+    joten se palauttaa aina None käyttötiedoille.
+    """
+    # Ollama-palvelimen oletusosoite paikallisella koneella
+    OLLAMA_URL = "http://localhost:11434/api/chat"
+
+    # Muodostetaan pyyntö Ollaman vaatimassa muodossa
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,  # Halutaan koko vastaus kerralla
+        "options": {
+            "temperature": temperature
+        }
+    }
+    # Jos pyydetään JSON-muotoista vastausta
+    if is_json:
+        payload["format"] = "json"
+
     try:
-        if "gemini" in model_name:
-            safety_settings = [
-                {"category": c, "threshold": "BLOCK_NONE"} for c in [
-                    "HARM_CATEGORY_HARASSMENT",
-                    "HARM_CATEGORY_HATE_SPEECH",
-                    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    "HARM_CATEGORY_DANGEROUS_CONTENT"
-                ]
-            ]
-            gen_config_params = {"temperature": temperature}
-            if is_json:
-                gen_config_params["response_mime_type"] = "application/json"
-            generation_config = GenerationConfig(**gen_config_params)
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(
-                prompt,
-                generation_config=generation_config,
-                safety_settings=safety_settings
-            )
-            time.sleep(0.8)
-            return response.text, getattr(response, 'usage_metadata', None)
-        else:
-            chat_completion = groq_client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model=model_name,
-                temperature=temperature,
-                response_format={"type": "json_object"} if is_json else None
-            )
-            response_text = chat_completion.choices[0].message.content
-            usage_data = chat_completion.usage
-            if usage_data:
-                usage_metadata = {
-                    'prompt_token_count': usage_data.prompt_tokens,
-                    'candidates_token_count': usage_data.completion_tokens,
-                    'total_token_count': usage_data.total_tokens
-                }
-                return response_text, type('obj', (object,), usage_metadata)()
-            return response_text, None
-    except BadRequestError as e:
-        print(
-            f"\n--- GROQ BAD REQUEST VIRHE (400) ---\n"
-            f"API palautti virheen kutsussa mallille: {model_name}\n"
-            f"Vastaus: {e.response.text}\n"
-            f"-------------------------------------\n"
+        # Lähetetään pyyntö requests-kirjaston avulla
+        response = requests.post(OLLAMA_URL, json=payload, timeout=120)
+        response.raise_for_status()  # Nostaa virheen, jos vastauskoodi on 4xx tai 5xx
+
+        response_data = response.json()
+        content = response_data.get("message", {}).get("content", "")
+
+        # Palautetaan None käyttötiedoille, koska Ollaman vastausrakenne on
+        # erilainen eikä sitä ole integroitu token-laskuriin.
+        return content, None
+
+    except requests.exceptions.RequestException as e:
+        error_message = (
+            f"API-VIRHE: Yhteys Ollama-palvelimeen ({OLLAMA_URL}) epäonnistui. "
+            f"Varmista, että Ollama-sovellus on käynnissä taustalla. Virhe: {e}"
         )
-        return f"API-VIRHE: {e}", None
-    except Exception as e:
-        return f"API-VIRHE: {e}", None
+        print(error_message)
+        return error_message, None
+    except json.JSONDecodeError:
+        error_message = (
+            f"API-VIRHE: Ollaman vastauksen JSON-jäsennys epäonnistui. "
+            f"Vastaus: {response.text}"
+        )
+        print(error_message)
+        return error_message, None
 
 
 def luo_hakusuunnitelma(pääaihe, syote_teksti):

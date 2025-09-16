@@ -2,7 +2,6 @@
 import re
 from collections import defaultdict
 import streamlit as st
-import google.generativeai as genai
 
 from logic import (
     lataa_raamattu, luo_kanoninen_avain, lue_ladattu_tiedosto,
@@ -82,13 +81,6 @@ def main():
         st.session_state.step = "input"
     if "token_count" not in st.session_state:
         st.session_state.token_count = {"input": 0, "output": 0, "total": 0}
-
-    try:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    except (KeyError, FileNotFoundError):
-        st.error(
-            "API-avainta (GEMINI_API_KEY) ei löydy Streamlitin secreteistä.")
-        st.stop()
 
     raamattu_resurssit = lataa_raamattu(URL_BIBLE_JSON, URL_DICTIONARY_JSON)
     if not raamattu_resurssit:

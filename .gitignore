@@ -1,13 +1,20 @@
-# Estetään ympäristömuuttujat ja salaisuudet
-.env
+# Python virtual environment
+.venv/
 
-# Estetään Pythonin välimuistikansiot
+# Python cache files
 __pycache__/
+*.pyc
 
-# Estetään VS Coden paikalliset asetukset
-.vscode/
+# Secrets files
+.env
+.streamlit/secrets.toml
 
-# Estetään diagnostiikan lokitiedostot
-*.txt
+# Estä käyttäjän syötetiedosto
+syote.txt
 
-# Voit lisätä muita tiedostoja tai kansioita tarpeen mukaan
+# Estä diagnostiikka- ja raporttitiedostot nimen osan perusteella
+*report*.txt
+*diagnostics*.txt
+
+# Estä generoidut JSON-logit
+*log*.json

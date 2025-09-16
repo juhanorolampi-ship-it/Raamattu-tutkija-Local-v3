@@ -5,8 +5,6 @@ import time
 import json
 import re
 from collections import defaultdict
-from dotenv import load_dotenv
-import google.generativeai as genai
 
 from logic import (
     lataa_raamattu, luo_kanoninen_avain, luo_hakusuunnitelma,
@@ -324,7 +322,5 @@ def run_diagnostics():
 
 
 if __name__ == "__main__":
-    load_dotenv()
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     run_diagnostics()
     log_header("DIAGNOSTIIKKA VALMIS")
