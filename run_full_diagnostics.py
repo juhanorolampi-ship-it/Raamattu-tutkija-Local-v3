@@ -1,4 +1,4 @@
-# run_full_diagnostics.py (Versio 4.0 Local - Vankka ja yksityiskohtainen)
+# run_full_diagnostics.py (Versio 4.1 - Parannettu lokitus)
 import os
 import logging
 import time
@@ -8,28 +8,24 @@ from collections import defaultdict
 
 from logic import (
     lataa_raamattu, luo_kanoninen_avain, luo_hakusuunnitelma,
-    validoi_avainsanat_ai, etsi_mekaanisesti, suodata_semanttisesti,
+    etsi_mekaanisesti, suodata_semanttisesti,
     pisteyta_ja_jarjestele, hae_jae_viitteella, tee_api_kutsu
 )
 
 # --- LOKITUSMÄÄRITYKSET ---
 LOG_FILENAME = 'full_diagnostics_report_v4.0_local.txt'
 
-# Määritellään lokituksen perusasetukset ammattimaisemmin
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)  # Asetetaan tasoksi DEBUG, jotta kaikki nähdään
+logger.setLevel(logging.DEBUG)
 
-# Poistetaan mahdolliset aiemmat käsittelijät varmuuden vuoksi
 if logger.hasHandlers():
     logger.handlers.clear()
 
-# Määritellään viestien muotoilu
 formatter = logging.Formatter(
     '%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%H:%M:%S'
 )
 
-# Tiedostokäsittelijä (FileHandler), joka ylikirjoittaa vanhan lokin
 try:
     file_handler = logging.FileHandler(LOG_FILENAME, encoding='utf-8', mode='w')
     file_handler.setFormatter(formatter)
@@ -37,7 +33,6 @@ try:
 except Exception as e:
     print(f"KRIITTINEN VIRHE: Lokitiedoston luonti epäonnistui: {e}")
 
-# Konsolikäsittelijä (StreamHandler)
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
@@ -59,7 +54,6 @@ def run_diagnostics():
     log_header("VAIHE 0: KÄYNNISTYSTARKISTUKSET")
     start_phase_time = time.perf_counter()
 
-    # 1. Tarkistetaan tiedostojen olemassaolo
     required_files = ['bible.json', 'bible_dictionary.json', 'syote.txt']
     files_ok = True
     for filename in required_files:
@@ -69,7 +63,6 @@ def run_diagnostics():
     if not files_ok:
         return
 
-    # 2. Tarkistetaan yhteys Ollamaan
     logging.info("Tarkistetaan yhteys Ollama-palvelimeen...")
     response = tee_api_kutsu("Hei, toimitko?", "llama3")
     if not response or "API-VIRHE" in response:
@@ -106,37 +99,37 @@ def run_diagnostics():
     # VAIHE 2: HAKUSUUNNITELMA & AVAINSANOJEN VALIDOINTI
     log_header("VAIHE 2: HAKUSUUNNITELMA & AVAINSANOJEN VALIDOINTI")
     start_phase_time = time.perf_counter()
-    logging.info("Luodaan hakusuunnitelmaa...")
+
     suunnitelma = luo_hakusuunnitelma(pääaihe, syote_teksti)
     if not suunnitelma:
         logging.critical("Hakusuunnitelman luonti epäonnistui. Pysäytetään.")
         return
+
     logging.info("Hakusuunnitelma luotu.")
-    logging.debug(
-        "Saatu suunnitelma:\n%s",
-        json.dumps(suunnitelma, indent=2, ensure_ascii=False)
-    )
 
-    logging.info("Validoidaan avainsanoja...")
-    kaikki_avainsanat = list(set(
-        sana for lista in suunnitelma.get("hakukomennot", {}).values()
-        for sana in lista
-    ))
-    hyvaksytyt_sanat_setti = validoi_avainsanat_ai(kaikki_avainsanat)
+    # UUSI OHJELMALLINEN VALIDointi SINUN IDEASI POHJALTA
+    logging.info("Tarkistetaan avainsanat ohjelmallisesti bible_dictionary.json tiedostoa vasten...")
 
+    # Ladataan sanakirja, jos se ei ole jo muistissa (varmuuden vuoksi)
+    if 'raamattu_sanakirja' not in locals() and 'raamattu_sanakirja' not in globals():
+         _, _, _, _, _, _, raamattu_sanakirja = lataa_raamattu('bible.json', 'bible_dictionary.json')
+
+    alkuperaiset_komennot = suunnitelma.get("hakukomennot", {})
     puhdistetut_komennot = {}
-    for osio, avainsanat in suunnitelma.get("hakukomennot", {}).items():
-        hyvaksytyt = [s for s in avainsanat if s in hyvaksytyt_sanat_setti]
-        hylatyt = [s for s in avainsanat if s not in hyvaksytyt_sanat_setti]
-        if hylatyt:
-            logging.info(
-                f"Osio {osio}: Hylättiin avainsanat: {', '.join(hylatyt)}")
-        puhdistetut_komennot[osio] = hyvaksytyt
-    suunnitelma["hakukomennot"] = puhdistetut_komennot
 
-    logging.info("Avainsanojen validointi valmis.")
+    for osio, avainsanat in alkuperaiset_komennot.items():
+        # Hyväksytään vain sanat, jotka löytyvät sanakirjasta (muutetaan pieniksi kirjaimiksi vertailua varten)
+        hyvaksytyt = [sana for sana in avainsanat if sana.lower() in raamattu_sanakirja]
+        hylatyt = [sana for sana in avainsanat if sana.lower() not in raamattu_sanakirja]
+
+        if hylatyt:
+            logging.info(f"Osio {osio}: Hylättiin sanakirjasta puuttuvat sanat: {', '.join(hylatyt)}")
+
+        puhdistetut_komennot[osio] = hyvaksytyt
+
+    logging.info("Avainsanojen tarkistus valmis.")
     logging.debug(
-        "Lopulliset hakukomennot validoinnin jälkeen:\n%s",
+        "Lopulliset hakukomennot tarkistuksen jälkeen:\n%s",
         json.dumps(puhdistetut_komennot, indent=2, ensure_ascii=False)
     )
     logging.info(
@@ -147,7 +140,8 @@ def run_diagnostics():
     log_header("VAIHE 3: JAKEIDEN KERÄYS")
     start_phase_time = time.perf_counter()
     osio_kohtaiset_jakeet = defaultdict(list)
-    hakukomennot = suunnitelma.get("hakukomennot", {})
+    hakukomennot = puhdistetut_komennot
+    
     for i, (osio_nro, avainsanat) in enumerate(hakukomennot.items()):
         sisallysluettelo = suunnitelma.get("vahvistettu_sisallysluettelo", "")
         teema_match = re.search(
@@ -168,6 +162,13 @@ def run_diagnostics():
             avainsanat, book_data_map, book_name_map_by_id)
         logging.info(
             f"  - Löytyi {len(kandidaatit)} mekaanista osumaa.")
+        
+        # --- UUSI LOKITUS MEKAANISILLE OSUMILLE ---
+        if kandidaatit:
+            logging.debug("--- MEKAANISET OSUMAT ---")
+            for jae in sorted(kandidaatit, key=lambda j: luo_kanoninen_avain(j, book_name_to_id_map)):
+                 logging.debug(f"  - {jae}")
+            logging.debug("------------------------")
 
         if kandidaatit:
             valinnat = suodata_semanttisesti(kandidaatit, teema)
@@ -194,7 +195,11 @@ def run_diagnostics():
     def progress_logger(percent, text):
         logging.info(f"  - Edistyminen: {percent}% - {text}")
 
-    jae_kartta = pisteyta_ja_jarjestele(pääaihe, suunnitelma.get("vahvistettu_sisallysluettelo", ""), osio_kohtaiset_jakeet, progress_callback=progress_logger)
+    jae_kartta = pisteyta_ja_jarjestele(
+        pääaihe, suunnitelma.get("vahvistettu_sisallysluettelo", ""),
+        osio_kohtaiset_jakeet,
+        progress_callback=progress_logger
+    )
     logging.info(
         f"Vaihe 4 valmis. Kesto: {time.perf_counter() - start_phase_time:.2f} sek.")
 

@@ -14,8 +14,8 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%H:%M:%S')
 
 # --- MALLIASETUKSET (UUSI STRATEGIA) ---
-JSON_MODEL = "qwen2:7b"      # Nopea ja luotettava JSON-muotoilija
-ANALYST_MODEL = "qwen2:7b"   # Syvä teologinen analyytikko
+JSON_MODEL = "qwen2.5:14b"      # Nopea ja luotettava JSON-muotoilija
+ANALYST_MODEL = "qwen2.5:14b"   # Syvä teologinen analyytikko
 FINNISH_MODEL = "poro-local"            # Suomen kielen asiantuntija
 
 TEOLOGINEN_PERUSOHJE = (
@@ -200,10 +200,10 @@ def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3, retries=3)
 
 def luo_hakusuunnitelma(pääaihe, syote_teksti):
     """
-    Luo hakusuunnitelman pilkkomalla sisällysluettelon osiin ja
-    kysymällä avainsanat jokaiselle osiolle erikseen.
+    Luo hakusuunnitelman käyttäen yhtä tehokasta mallia ja tarkkaa, monivaiheista kehotetta.
     """
-    logging.info("Aloitetaan hakusuunnitelman luonti osio kerrallaan...")
+    logging.info("Aloitetaan hakusuunnitelman luonti yhdellä mallilla ja tarkalla kehotteella...")
+    # ... (funktion alkuosa pysyy samana, kopioi se aiemmasta versiosta) ...
     sisallysluettelo_match = re.search(
         r"SISÄLLYSLUETTELO.*", syote_teksti, re.IGNORECASE | re.DOTALL
     )
@@ -212,8 +212,6 @@ def luo_hakusuunnitelma(pääaihe, syote_teksti):
         return None
 
     kayttajan_sisallysluettelo = sisallysluettelo_match.group(0).strip()
-    
-    # Pilkotaan sisällysluettelo osioihin numeroidun listauksen perusteella
     osiot = re.findall(r"(^\s*(\d+(\.\d+)*\.).*?)(?=\n\s*\d+(\.\d+)*\.|\Z)", 
                          kayttajan_sisallysluettelo, re.MULTILINE | re.DOTALL)
 
@@ -230,22 +228,22 @@ def luo_hakusuunnitelma(pääaihe, syote_teksti):
         
         logging.info(f"({i+1}/{total_osiot}) Käsitellään osiota: {osion_numero}")
 
+        # UUSI, YKSINKERTAISTETTU JA TEHOKAS KEHOTE
         prompt = (
-            "Olet apulaistutkija. Tehtäväsi on luoda avainsanat alla olevalle "
-            "yksittäiselle tutkimuksen alaotsikolle. Pääaihe antaa kontekstin.\n\n"
-            f"PÄÄAIHE: {pääaihe}\n\n"
-            f"ALAOTSIKKO:\n---\n{osion_teksti}\n---\n\n"
-            "OHJEET:\n"
-            "1. Luo listan, jossa on 2-4 kaikkein tärkeintä hakusanaa, "
-            "jotka liittyvät yllä olevaan ALAOTSIKKOON.\n"
-            "2. Valitse sanoja tai sanapareja, jotka löytyvät todennäköisesti "
-            "suomalaisesta KR33/38-Raamatusta.\n"
-            "3. Palauta vastauksesi VAIN JSON-muotoisena listana. ÄLÄ kirjoita mitään muuta.\n"
-            'Esimerkki: ["avainsana1", "avainsana2", "kolmas avainsana"]'
+            "Olet teologinen asiantuntija. Tehtäväsi on luoda laadukas lista hakusanoja Raamattu-tutkimusta varten.\n\n"
+            f"TUTKIMUKSEN PÄÄAIHE: {pääaihe}\n"
+            f"KÄSITELTÄVÄ ALAOTSIKKO:\n---\n{osion_teksti}\n---\n\n"
+            "TEE SEURAAVAT VAIHEET:\n"
+            "1. **Analysoi** alaotsikon syvin teologinen teema.\n"
+            "2. **Iderioi** 3-4 keskeistä peruskäsitettä, jotka liittyvät teemaan.\n"
+            "3. **Laajenna** listaasi lisäämällä peruskäsitteille tärkeitä taivutusmuotoja (esim. 'laki', 'lain', 'lakia').\n"
+            "4. **Varmista**, että kaikki sanat ovat suomenkielisiä ja todennäköisesti löytyvät KR33/38-Raamatusta.\n"
+            "5. **Palauta** lopputulos VAIN yhtenä JSON-listana. Älä selitä tai lisää mitään muuta.\n\n"
+            'Esimerkki hyvästä vastauksesta: ["harhaoppi", "harhaoppia", "väärä opetus", "eksytys", "eksytystä", "varoitus"]'
         )
 
         vastaus_str = tee_api_kutsu(
-            prompt, ANALYST_MODEL, is_json=True, temperature=0.1
+            prompt, ANALYST_MODEL, is_json=True, temperature=0.2
         )
 
         if not vastaus_str or vastaus_str.startswith("API-VIRHE:"):
@@ -260,13 +258,14 @@ def luo_hakusuunnitelma(pääaihe, syote_teksti):
             avainsanat = ast.literal_eval(json_str)
             if isinstance(avainsanat, list):
                 kokonais_hakukomennot[osion_numero] = avainsanat
+                logging.debug(f"  - Saadut avainsanat: {avainsanat}")
             else:
                 logging.warning(f"Odotettiin listaa osiolle {osion_numero}, mutta saatiin: {type(avainsanat)}")
 
         except (ValueError, SyntaxError) as e:
             logging.error(f"JSON-jäsennysvirhe osiolle {osion_numero}: {e}")
         
-        time.sleep(1) # Pieni tauko kutsujen välillä
+        time.sleep(1)
 
     suunnitelma = {
         "vahvistettu_sisallysluettelo": kayttajan_sisallysluettelo,
@@ -339,16 +338,15 @@ def suodata_semanttisesti(kandidaattijakeet, osion_teema):
     if not kandidaattijakeet:
         return []
     prompt = (
-        "Olet teologinen asiantuntija. Tehtäväsi on arvioida alla olevaa "
-        "jaelistaa ja valita sieltä ne, jotka liittyvät annettuun teemaan.\n\n"
-        f"**Teema:**\n{osion_teema}\n\n"
-        f"**Kandidaattijakeet:**\n---\n{'\n'.join(kandidaattijakeet)}\n---\n\n"
-        "**OHJEET:**\n"
-        "1. Käy läpi kaikki kandidaattijakeet.\n"
-        "2. Valitse niistä temaattisesti relevantit.\n"
-        "3. Palauta vastauksesi JSON-muotoisena listana objekteja. ÄLÄ SELITÄ VASTAUSTASI.\n"
-        '[{"viite": "Kirjan nimi Luku:Jae"}]'
-    )
+    "Olet teologinen asiantuntija. Tehtäväsi on arvioida alla olevaa jaelistaa ja valita ne, jotka liittyvät annettuun teemaan.\n\n"
+    f"**Teema:**\n{osion_teema}\n\n"
+    f"**Kandidaattijakeet:**\n---\n{'\n'.join(kandidaattijakeet)}\n---\n\n"
+    "**OHJEET:**\n"
+    "1. Käy läpi kaikki kandidaattijakeet huolellisesti.\n"
+    "2. Valitse VAIN ne jakeet, jotka ovat **erittäin relevantteja** annettuun teemaan.\n"
+    "3. Palauta vastauksesi JSON-muodossa, jossa jokaiselle valitulle jakeelle on 'viite' ja lyhyt, yhden lauseen 'perustelu'. ÄLÄ SELITÄ MUUTOIN.\n"
+    '[{"viite": "Kirjan nimi Luku:Jae", "perustelu": "Tämä jae käsittelee suoraan teemaa X."}]'
+)
     vastaus_str = tee_api_kutsu(
         prompt, ANALYST_MODEL, is_json=True, temperature=0.1)
         
