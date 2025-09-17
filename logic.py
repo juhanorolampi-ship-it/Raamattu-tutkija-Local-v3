@@ -200,7 +200,7 @@ def tee_api_kutsu(prompt, model_name, is_json=False, temperature=0.3, retries=3)
 
 def luo_hakusuunnitelma(pääaihe, syote_teksti):
     """
-    Luo hakusuunnitelman käyttäen yhtä tehokasta mallia ja tarkkaa, monivaiheista kehotetta.
+    Luo hakusuunnitelman käyttäen yhtä tehokasta mallia ja erittäin tarkkaa, monivaiheista kehotetta.
     """
     logging.info("Aloitetaan hakusuunnitelman luonti yhdellä mallilla ja tarkalla kehotteella...")
     # ... (funktion alkuosa pysyy samana, kopioi se aiemmasta versiosta) ...
@@ -222,24 +222,26 @@ def luo_hakusuunnitelma(pääaihe, syote_teksti):
     kokonais_hakukomennot = {}
     total_osiot = len(osiot)
 
-    for i, osio_data in enumerate(osiot):
+    for i, (osio_data) in enumerate(osiot):
         osion_teksti = osio_data[0].strip()
         osion_numero = osio_data[1].strip()
         
         logging.info(f"({i+1}/{total_osiot}) Käsitellään osiota: {osion_numero}")
 
-        # UUSI, YKSINKERTAISTETTU JA TEHOKAS KEHOTE
+        # UUSI, YKSITYISKOHTAINEN JA PARANNELTU KEHOTE
         prompt = (
             "Olet teologinen asiantuntija. Tehtäväsi on luoda laadukas lista hakusanoja Raamattu-tutkimusta varten.\n\n"
             f"TUTKIMUKSEN PÄÄAIHE: {pääaihe}\n"
             f"KÄSITELTÄVÄ ALAOTSIKKO:\n---\n{osion_teksti}\n---\n\n"
             "TEE SEURAAVAT VAIHEET:\n"
             "1. **Analysoi** alaotsikon syvin teologinen teema.\n"
-            "2. **Iderioi** 3-4 keskeistä peruskäsitettä, jotka liittyvät teemaan.\n"
-            "3. **Laajenna** listaasi lisäämällä peruskäsitteille tärkeitä taivutusmuotoja (esim. 'laki', 'lain', 'lakia').\n"
-            "4. **Varmista**, että kaikki sanat ovat suomenkielisiä ja todennäköisesti löytyvät KR33/38-Raamatusta.\n"
-            "5. **Palauta** lopputulos VAIN yhtenä JSON-listana. Älä selitä tai lisää mitään muuta.\n\n"
-            'Esimerkki hyvästä vastauksesta: ["harhaoppi", "harhaoppia", "väärä opetus", "eksytys", "eksytystä", "varoitus"]'
+            "2. **Ideoi** 4-6 keskeistä peruskäsitettä (sekä substantiiveja että verbejä perusmuodossa), jotka liittyvät teemaan.\n"
+            "3. **Laajenna** listaasi lisäämällä kullekin peruskäsitteelle 1-2 tärkeää teologista synonyymiä tai rinnakkaiskäsitettä.\n"
+            "4. **Rikasta** listaasi lisäämällä sanoille tärkeitä taivutusmuotoja (esim. 'laki', 'lain', 'lakia').\n"
+            "5. **Suosi** sanoja, jotka todennäköisesti löytyvät suomalaisesta KR33/38-Raamatusta.\n"
+            "6. **Palauta** lopputulos VAIN yhtenä JSON-listana. Älä selitä tai lisää mitään muuta.\n\n"
+            'Esimerkki hyvästä vastauksesta teemalle "2.3 Toimintaohjeet harhaoppia vastaan":\n'
+            '["harhaoppi", "harhaoppia", "väärä opetus", "eksytys", "eksytystä", "varoitus", "välttää", "karttaa"]'
         )
 
         vastaus_str = tee_api_kutsu(
@@ -257,8 +259,9 @@ def luo_hakusuunnitelma(pääaihe, syote_teksti):
             
             avainsanat = ast.literal_eval(json_str)
             if isinstance(avainsanat, list):
-                kokonais_hakukomennot[osion_numero] = avainsanat
-                logging.debug(f"  - Saadut avainsanat: {avainsanat}")
+                # Varmistetaan, että kaikki listan alkiot ovat merkkijonoja
+                kokonais_hakukomennot[osion_numero] = [str(s) for s in avainsanat]
+                logging.debug(f"  - Saadut avainsanat: {[str(s) for s in avainsanat]}")
             else:
                 logging.warning(f"Odotettiin listaa osiolle {osion_numero}, mutta saatiin: {type(avainsanat)}")
 
@@ -338,14 +341,15 @@ def suodata_semanttisesti(kandidaattijakeet, osion_teema):
     if not kandidaattijakeet:
         return []
     prompt = (
-    "Olet teologinen asiantuntija. Tehtäväsi on arvioida alla olevaa jaelistaa ja valita ne, jotka liittyvät annettuun teemaan.\n\n"
-    f"**Teema:**\n{osion_teema}\n\n"
-    f"**Kandidaattijakeet:**\n---\n{'\n'.join(kandidaattijakeet)}\n---\n\n"
-    "**OHJEET:**\n"
-    "1. Käy läpi kaikki kandidaattijakeet huolellisesti.\n"
-    "2. Valitse VAIN ne jakeet, jotka ovat **erittäin relevantteja** annettuun teemaan.\n"
-    "3. Palauta vastauksesi JSON-muodossa, jossa jokaiselle valitulle jakeelle on 'viite' ja lyhyt, yhden lauseen 'perustelu'. ÄLÄ SELITÄ MUUTOIN.\n"
-    '[{"viite": "Kirjan nimi Luku:Jae", "perustelu": "Tämä jae käsittelee suoraan teemaa X."}]'
+    "Olet tekoälyavustaja, jonka AINOA tehtävä on suodattaa alla olevaa jaelistaa. Sinun TÄYTYY noudattaa sääntöjä tarkasti.\n\n"
+    f"**Teema, jonka perusteella suodatat:**\n{osion_teema}\n\n"
+    f"**Jaelista, josta sinun TÄYTYY tehdä valintasi (et saa käyttää muita jakeita):\n**---\n{'\n'.join(kandidaattijakeet)}\n---\n\n"
+    "**SÄÄNNÖT:**\n"
+    "1. Käy läpi yllä oleva jaelista.\n"
+    "2. Valitse listalta VAIN ne jakeet, jotka ovat erittäin relevantteja annettuun teemaan.\n"
+    "3. **ÄLÄ KEKSI TAI LISÄÄ UUSIA JAKEITA.** Valintojesi on tultava vain ja ainoastaan annetusta jaelistasta.\n"
+    "4. Palauta vastauksesi JSON-muodossa, jossa on 'viite' ja lyhyt 'perustelu' jokaiselle valinnalle.\n\n"
+    '[{"viite": "1. Mooseksen kirja 1:1", "perustelu": "Tämä jae liittyy suoraan teemaan X, koska..."}]'
 )
     vastaus_str = tee_api_kutsu(
         prompt, ANALYST_MODEL, is_json=True, temperature=0.1)

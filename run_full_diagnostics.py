@@ -81,9 +81,9 @@ def run_diagnostics():
     start_phase_time = time.perf_counter()
     raamattu_resurssit = lataa_raamattu('bible.json', 'bible_dictionary.json')
     (
-        _, _, book_name_map_by_id, book_data_map, _,
-        book_name_to_id_map, _
-    ) = raamattu_resurssit
+    _, _, book_name_map_by_id, book_data_map, _,
+    book_name_to_id_map, raamattu_sanakirja
+) = raamattu_resurssit
     try:
         with open("syote.txt", "r", encoding="utf-8") as f:
             syote_teksti = f.read().strip()
@@ -99,33 +99,30 @@ def run_diagnostics():
     # VAIHE 2: HAKUSUUNNITELMA & AVAINSANOJEN VALIDOINTI
     log_header("VAIHE 2: HAKUSUUNNITELMA & AVAINSANOJEN VALIDOINTI")
     start_phase_time = time.perf_counter()
-
+    
     suunnitelma = luo_hakusuunnitelma(pääaihe, syote_teksti)
     if not suunnitelma:
         logging.critical("Hakusuunnitelman luonti epäonnistui. Pysäytetään.")
         return
-
-    logging.info("Hakusuunnitelma luotu.")
-
-    # UUSI OHJELMALLINEN VALIDointi SINUN IDEASI POHJALTA
+        
+    logging.info("Hakusuunnitelma luotu onnistuneesti.")
+    
     logging.info("Tarkistetaan avainsanat ohjelmallisesti bible_dictionary.json tiedostoa vasten...")
-
-    # Ladataan sanakirja, jos se ei ole jo muistissa (varmuuden vuoksi)
-    if 'raamattu_sanakirja' not in locals() and 'raamattu_sanakirja' not in globals():
-         _, _, _, _, _, _, raamattu_sanakirja = lataa_raamattu('bible.json', 'bible_dictionary.json')
-
+    
     alkuperaiset_komennot = suunnitelma.get("hakukomennot", {})
     puhdistetut_komennot = {}
-
+    
     for osio, avainsanat in alkuperaiset_komennot.items():
-        # Hyväksytään vain sanat, jotka löytyvät sanakirjasta (muutetaan pieniksi kirjaimiksi vertailua varten)
+        logging.debug(f"Osion {osio} raa'at avainsanat ({len(avainsanat)} kpl): {avainsanat}")
         hyvaksytyt = [sana for sana in avainsanat if sana.lower() in raamattu_sanakirja]
         hylatyt = [sana for sana in avainsanat if sana.lower() not in raamattu_sanakirja]
-
+        
         if hylatyt:
-            logging.info(f"Osio {osio}: Hylättiin sanakirjasta puuttuvat sanat: {', '.join(hylatyt)}")
-
+            logging.info(f"Osio {osio}: Hylättiin {len(hylatyt)} sanaa: {', '.join(hylatyt)}")
+        
         puhdistetut_komennot[osio] = hyvaksytyt
+        logging.info(f"Osio {osio}: Hyväksyttiin {len(hyvaksytyt)} sanaa.")
+        logging.debug(f"Hyväksytyt sanat: {hyvaksytyt}")
 
     logging.info("Avainsanojen tarkistus valmis.")
     logging.debug(
@@ -160,30 +157,46 @@ def run_diagnostics():
             f"({i+1}/{len(hakukomennot)}) Etsitään jakeita osiolle '{teema}'...")
         kandidaatit = etsi_mekaanisesti(
             avainsanat, book_data_map, book_name_map_by_id)
-        logging.info(
-            f"  - Löytyi {len(kandidaatit)} mekaanista osumaa.")
+        logging.info(f"  - Löytyi {len(kandidaatit)} mekaanista osumaa.")
         
-        # --- UUSI LOKITUS MEKAANISILLE OSUMILLE ---
         if kandidaatit:
-            logging.debug("--- MEKAANISET OSUMAT ---")
+            logging.debug("--- KAIKKI MEKAANISET OSUMAT ---")
             for jae in sorted(kandidaatit, key=lambda j: luo_kanoninen_avain(j, book_name_to_id_map)):
                  logging.debug(f"  - {jae}")
-            logging.debug("------------------------")
+            logging.debug("-----------------------------")
 
-        if kandidaatit:
-            valinnat = suodata_semanttisesti(kandidaatit, teema)
-            logging.info(
-                f"  - Tekoäly valitsi {len(valinnat)} relevanttia jaetta.")
-            for valinta in valinnat:
-                if not isinstance(valinta, dict):
-                    continue
-                viite_str = valinta.get("viite")
-                if not viite_str:
-                    continue
-                jae = hae_jae_viitteella(
-                    viite_str, book_data_map, book_name_map_by_id)
-                if jae:
-                    osio_kohtaiset_jakeet[osio_nro].append(jae)
+            # --- UUSI KAKSIVAIHEINEN SUODATUS ---
+            logging.info("  - Aloitetaan esikarsinta: valitaan jakeet, joissa vähintään 2 avainsanaa...")
+            esikarsitut_kandidaatit = []
+            if len(avainsanat) > 1: # Esikarsinta on järkevää vain jos avainsanoja on enemmän kuin yksi
+                for jae in kandidaatit:
+                    osumalaskuri = 0
+                    # Lasketaan kuinka moni uniikki avainsana löytyy jakeesta
+                    for sana in set(avainsanat):
+                        if re.search(re.escape(sana), jae, re.IGNORECASE):
+                            osumalaskuri += 1
+                    if osumalaskuri >= 2:
+                        esikarsitut_kandidaatit.append(jae)
+            else:
+                # Jos avainsanoja on vain yksi, ei voida karsia, joten käytetään kaikkia
+                esikarsitut_kandidaatit = kandidaatit
+            
+            logging.info(f"  - Esikarsinnan jälkeen jäljellä {len(esikarsitut_kandidaatit)} jaetta tekoälyanalyysiin.")
+            
+            if esikarsitut_kandidaatit:
+                valinnat = suodata_semanttisesti(esikarsitut_kandidaatit, teema)
+                logging.info(f"  - Tekoäly valitsi {len(valinnat)} lopullista jaetta.")
+                for valinta in valinnat:
+                    if not isinstance(valinta, dict):
+                        continue
+                    viite_str = valinta.get("viite")
+                    if not viite_str:
+                        continue
+                    jae = hae_jae_viitteella(
+                        viite_str, book_data_map, book_name_map_by_id)
+                    if jae:
+                        osio_kohtaiset_jakeet[osio_nro].append(jae)
+    
     logging.info(
         f"Vaihe 3 valmis. Kesto: {time.perf_counter() - start_phase_time:.2f} sek."
     )
